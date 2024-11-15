@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -9,26 +9,39 @@ import { Badge } from '@/components/ui/badge'
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts'
 import { useTheme } from 'next-themes'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { useQuery } from '@tanstack/react-query'
+import axios from 'axios'
 
+const COLORS = [
+  '#8884d8', // Azul
+  '#82ca9d', // Verde
+  '#ffc658', // Amarelo
+  '#ff8042', // Laranja
+  '#0088FE', // Azul claro
+  '#00C49F', // Verde claro
+  '#FFBB28', // Amarelo claro
+  '#FF8042', // Laranja escuro
+]
+
+
+// Tipagem para os dados do repositório
 interface Repository {
   id: number
   name: string
-  description: string
+  description: string | null
   stargazers_count: number
   forks_count: number
-  language: string
+  language: string | null
   html_url: string
 }
 
+// Tipagem para os dados de linguagem no gráfico
 interface LanguageData {
   name: string
   value: number
 }
 
-const COLORS = [
-  '#8884d8', '#82ca9d', '#ffc658', '#ff8042', '#0088FE', '#00C49F', '#FFBB28', '#FF8042',
-]
-
+// Traduções em diferentes idiomas
 const translations = {
   'pt-BR': {
     title: 'Repositórios que eu gostei',
@@ -56,78 +69,48 @@ const translations = {
   },
 }
 
+// Função de busca de repositórios estrelados
+async function fetchStarredRepos(): Promise<Repository[]> {
+  const { data } = await axios.get<Repository[]>(
+    'https://api.github.com/users/mateusarcedev/starred?per_page=100'
+  )
+  return data
+}
+
 export default function Component() {
-  const [repos, setRepos] = useState<Repository[]>([])
-  const [filteredRepos, setFilteredRepos] = useState<Repository[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [currentPage, setCurrentPage] = useState(1)
-  const [searchTerm, setSearchTerm] = useState('')
-  const [selectedLanguages, setSelectedLanguages] = useState<string[]>([])
-  const [languages, setLanguages] = useState<string[]>([])
-  const [languageData, setLanguageData] = useState<LanguageData[]>([])
-  const [language, setLanguage] = useState<'pt-BR' | 'en-US'>('pt-BR')
-  const { theme, setTheme } = useTheme()
+  const [searchTerm, setSearchTerm] = useState<string>('') // Define o estado como string
+  const [selectedLanguages, setSelectedLanguages] = useState<string[]>([]) // Array de strings para as linguagens selecionadas
+  const [language, setLanguage] = useState<'pt-BR' | 'en-US'>('pt-BR') // Linguagens limitadas aos valores disponíveis
+  const [currentPage, setCurrentPage] = useState<number>(1) // Estado como número
+  const reposPerPage = 10 // Número fixo de repositórios por página
+  const { theme, setTheme } = useTheme() // Tema atual e função para alternar tema
   const t = translations[language]
-  const reposPerPage = 10
 
-  useEffect(() => {
-    async function fetchStarredRepos() {
-      setLoading(true)
-      setError('')
-      try {
-        const response = await fetch('https://api.github.com/users/mateusarcedev/starred?per_page=100')
-        if (!response.ok) {
-          const errorDetails = await response.json().catch(() => ({}))
-          throw new Error(`Erro ao buscar repositórios: ${errorDetails.message || response.statusText}`)
-        }
+  // Consulta os repositórios usando React Query
+  const { data: repos = [], isLoading, isError, error } = useQuery<Repository[], Error>({
+    queryKey: ['repos'],
+    queryFn: fetchStarredRepos,
+    staleTime: 1000 * 60 * 10, // 10 minutos
+  })
 
-        const data = await response.json()
-        setRepos(data)
-        setFilteredRepos(data)
-
-        const uniqueLanguages = Array.from(new Set(data.map((repo: Repository) => repo.language).filter(Boolean)))
-        setLanguages(uniqueLanguages)
-
-        updateLanguageData(data)
-      } catch (err) {
-        console.error('Erro no fetchStarredRepos:', err)
-        setError(err instanceof Error ? err.message : 'Erro desconhecido ao carregar repositórios com estrela.')
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    fetchStarredRepos()
-  }, [])
-
-  useEffect(() => {
-    const results = repos.filter(repo =>
-      (repo.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (repo.description && repo.description.toLowerCase().includes(searchTerm.toLowerCase()))) &&
-      (selectedLanguages.length === 0 || (repo.language && selectedLanguages.includes(repo.language)))
-    )
-    setFilteredRepos(results)
-    setCurrentPage(1)
-    updateLanguageData(results)
-  }, [searchTerm, repos, selectedLanguages])
-
-  const updateLanguageData = (repoData: Repository[]) => {
-    const langCount: { [key: string]: number } = {}
-    repoData.forEach(repo => {
-      if (repo.language) {
-        langCount[repo.language] = (langCount[repo.language] || 0) + 1
-      }
-    })
-    const data = Object.entries(langCount).map(([name, value]) => ({ name, value }))
-    data.sort((a, b) => b.value - a.value)
-    setLanguageData(data)
-  }
+  // Filtra os repositórios com base na pesquisa e linguagens selecionadas
+  const filteredRepos = repos.filter(repo =>
+    (repo.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (repo.description && repo.description.toLowerCase().includes(searchTerm.toLowerCase()))) &&
+    (selectedLanguages.length === 0 || (repo.language && selectedLanguages.includes(repo.language)))
+  )
 
   const indexOfLastRepo = currentPage * reposPerPage
   const indexOfFirstRepo = indexOfLastRepo - reposPerPage
   const currentRepos = filteredRepos.slice(indexOfFirstRepo, indexOfLastRepo)
   const totalPages = Math.ceil(filteredRepos.length / reposPerPage)
+
+  const uniqueLanguages = Array.from(new Set(repos.map(repo => repo.language).filter(Boolean) as string[]))
+
+  const languageData: LanguageData[] = uniqueLanguages.map(lang => ({
+    name: lang,
+    value: repos.filter(repo => repo.language === lang).length,
+  }))
 
   const paginate = (pageNumber: number) => setCurrentPage(pageNumber)
 
@@ -137,7 +120,7 @@ export default function Component() {
     )
   }
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="flex min-h-[400px] items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -145,14 +128,15 @@ export default function Component() {
     )
   }
 
-  if (error) {
+  if (isError) {
     return (
       <div className="flex min-h-[400px] items-center justify-center text-destructive">
         <AlertCircle className="mr-2 h-5 w-5" />
-        {error}
+        {error?.message || 'Erro ao carregar repositórios.'}
       </div>
     )
   }
+
 
   return (
     <div className="container mx-auto py-8">
@@ -187,7 +171,7 @@ export default function Component() {
           />
         </div>
         <div className="flex flex-wrap gap-2">
-          {languages.map(language => (
+          {uniqueLanguages.map(language => (
             <Badge
               key={language}
               variant={selectedLanguages.includes(language) ? "default" : "outline"}
@@ -243,30 +227,26 @@ export default function Component() {
                 <div className="flex items-center space-x-4 text-sm">
                   <span className="flex items-center space-x-1"><Star className="h-4 w-4" /> {repo.stargazers_count}</span>
                   <span className="flex items-center space-x-1"><GitFork className="h-4 w-4" /> {repo.forks_count}</span>
-                  <span>{repo.language}</span>
+                  {repo.language && <span className="flex items-center space-x-1"><Badge variant="outline">{repo.language}</Badge></span>}
                 </div>
               </CardContent>
             </Card>
           ))
         ) : (
-          <div className="text-center text-muted-foreground">
-            {t.noReposFound}
-          </div>
+          <div className="text-center text-muted-foreground">{t.noReposFound}</div>
         )}
       </div>
-      {filteredRepos.length > reposPerPage && (
-        <div className="mt-8 flex justify-between items-center">
-          <Button variant="outline" onClick={() => paginate(currentPage - 1)} disabled={currentPage === 1}>
-            <ChevronLeft className="mr-1 h-4 w-4" />
-            {t.previous}
-          </Button>
-          <span className="text-sm">{`${t.page} ${currentPage} ${t.of} ${totalPages}`}</span>
-          <Button variant="outline" onClick={() => paginate(currentPage + 1)} disabled={currentPage === totalPages}>
-            {t.next}
-            <ChevronRight className="ml-1 h-4 w-4" />
-          </Button>
-        </div>
-      )}
+      <div className="mt-8 flex items-center justify-center space-x-4">
+        <Button variant="outline" size="icon" disabled={currentPage === 1} onClick={() => paginate(currentPage - 1)}>
+          <ChevronLeft className="h-5 w-5" />
+        </Button>
+        <span className="text-sm">
+          {t.page} {currentPage} {t.of} {totalPages}
+        </span>
+        <Button variant="outline" size="icon" disabled={currentPage === totalPages} onClick={() => paginate(currentPage + 1)}>
+          <ChevronRight className="h-5 w-5" />
+        </Button>
+      </div>
     </div>
   )
 }
