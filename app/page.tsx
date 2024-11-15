@@ -105,7 +105,7 @@ export default function Component() {
   const currentRepos = filteredRepos.slice(indexOfFirstRepo, indexOfLastRepo)
   const totalPages = Math.ceil(filteredRepos.length / reposPerPage)
 
-  const uniqueLanguages = Array.from(new Set(repos.map(repo => repo.language).filter(Boolean) as string[]))
+  const uniqueLanguages = Array.from(new Set(repos.map((repo: Repository) => repo.language).filter(Boolean))) as string[];
 
   const languageData: LanguageData[] = uniqueLanguages.map(lang => ({
     name: lang,
