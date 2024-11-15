@@ -73,17 +73,26 @@ export default function Component() {
 
   useEffect(() => {
     async function fetchStarredRepos() {
+      setLoading(true)
+      setError('')
       try {
         const response = await fetch('https://api.github.com/users/mateusarcedev/starred?per_page=100')
-        if (!response.ok) throw new Error('Falha ao buscar repositórios com estrela')
+        if (!response.ok) {
+          const errorDetails = await response.json().catch(() => ({}))
+          throw new Error(`Erro ao buscar repositórios: ${errorDetails.message || response.statusText}`)
+        }
+
         const data = await response.json()
         setRepos(data)
         setFilteredRepos(data)
-        const uniqueLanguages: any = Array.from(new Set(data.map((repo: Repository) => repo.language).filter(Boolean)))
+
+        const uniqueLanguages = Array.from(new Set(data.map((repo: Repository) => repo.language).filter(Boolean)))
         setLanguages(uniqueLanguages)
+
         updateLanguageData(data)
       } catch (err) {
-        setError('Falha ao carregar repositórios com estrela')
+        console.error('Erro no fetchStarredRepos:', err)
+        setError(err instanceof Error ? err.message : 'Erro desconhecido ao carregar repositórios com estrela.')
       } finally {
         setLoading(false)
       }
@@ -124,9 +133,7 @@ export default function Component() {
 
   const toggleLanguage = (language: string) => {
     setSelectedLanguages(prev =>
-      prev.includes(language)
-        ? prev.filter(l => l !== language)
-        : [...prev, language]
+      prev.includes(language) ? prev.filter(l => l !== language) : [...prev, language]
     )
   }
 
@@ -161,11 +168,7 @@ export default function Component() {
               <SelectItem value="en-US">English (US)</SelectItem>
             </SelectContent>
           </Select>
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
-          >
+          <Button variant="outline" size="icon" onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>
             <Sun className="h-[1.2rem] w-[1.2rem] rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
             <Moon className="absolute h-[1.2rem] w-[1.2rem] rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
             <span className="sr-only">Toggle theme</span>
@@ -211,90 +214,58 @@ export default function Component() {
           <div className="h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
-                <Pie
-                  data={languageData}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  outerRadius={80}
-                  fill="#8884d8"
-                  dataKey="value"
-                >
+                <Pie data={languageData} cx="50%" cy="50%" labelLine={false} outerRadius={80} fill="#8884d8" dataKey="value">
                   {languageData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>
-                <Tooltip />
                 <Legend />
+                <Tooltip />
               </PieChart>
             </ResponsiveContainer>
           </div>
         </CardContent>
       </Card>
-      {filteredRepos.length === 0 ? (
-        <p className="text-center text-muted-foreground">{t.noReposFound}</p>
-      ) : (
-        <>
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {currentRepos.map((repo) => (
-              <Card key={repo.id} className="flex h-full flex-col">
-                <CardHeader>
-                  <CardTitle className="flex items-center justify-between">
-                    <a
-                      href={repo.html_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="hover:underline"
-                    >
-                      {repo.name}
-                    </a>
-                    {repo.language && (
-                      <Badge variant="secondary" className="ml-2">
-                        {repo.language}
-                      </Badge>
-                    )}
-                  </CardTitle>
-                  <CardDescription className="line-clamp-2">
-                    {repo.description || t.noDescription}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="mt-auto">
-                  <div className="flex items-center space-x-4 text-sm text-muted-foreground">
-                    <div className="flex items-center">
-                      <Star className="mr-1 h-4 w-4" />
-                      {repo.stargazers_count.toLocaleString()}
-                    </div>
-                    <div className="flex items-center">
-                      <GitFork className="mr-1 h-4 w-4" />
-                      {repo.forks_count.toLocaleString()}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+      <div className="space-y-4">
+        {currentRepos.length > 0 ? (
+          currentRepos.map(repo => (
+            <Card key={repo.id} className="hover:bg-accent cursor-pointer">
+              <CardHeader>
+                <CardTitle className="flex items-center space-x-2">
+                  <a href={repo.html_url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+                    {repo.name}
+                  </a>
+                  <span className="text-xs text-muted-foreground">#{repo.id}</span>
+                </CardTitle>
+                <CardDescription>{repo.description || t.noDescription}</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center space-x-4 text-sm">
+                  <span className="flex items-center space-x-1"><Star className="h-4 w-4" /> {repo.stargazers_count}</span>
+                  <span className="flex items-center space-x-1"><GitFork className="h-4 w-4" /> {repo.forks_count}</span>
+                  <span>{repo.language}</span>
+                </div>
+              </CardContent>
+            </Card>
+          ))
+        ) : (
+          <div className="text-center text-muted-foreground">
+            {t.noReposFound}
           </div>
-          <div className="mt-8 flex justify-center space-x-2">
-            <Button
-              variant="outline"
-              onClick={() => paginate(currentPage - 1)}
-              disabled={currentPage === 1}
-            >
-              <ChevronLeft className="h-4 w-4" />
-              {t.previous}
-            </Button>
-            <span className="flex items-center">
-              {t.page} {currentPage} {t.of} {totalPages}
-            </span>
-            <Button
-              variant="outline"
-              onClick={() => paginate(currentPage + 1)}
-              disabled={currentPage === totalPages}
-            >
-              {t.next}
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
-        </>
+        )}
+      </div>
+      {filteredRepos.length > reposPerPage && (
+        <div className="mt-8 flex justify-between items-center">
+          <Button variant="outline" onClick={() => paginate(currentPage - 1)} disabled={currentPage === 1}>
+            <ChevronLeft className="mr-1 h-4 w-4" />
+            {t.previous}
+          </Button>
+          <span className="text-sm">{`${t.page} ${currentPage} ${t.of} ${totalPages}`}</span>
+          <Button variant="outline" onClick={() => paginate(currentPage + 1)} disabled={currentPage === totalPages}>
+            {t.next}
+            <ChevronRight className="ml-1 h-4 w-4" />
+          </Button>
+        </div>
       )}
     </div>
   )
